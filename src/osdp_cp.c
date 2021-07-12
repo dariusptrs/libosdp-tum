@@ -10,6 +10,7 @@
 
 #include "osdp_common.h"
 #include "osdp_file.h"
+#include "osdp_trs.h"
 
 LOGGER_DECLARE(osdp, "CP");
 
