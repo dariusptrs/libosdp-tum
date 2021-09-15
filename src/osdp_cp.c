@@ -390,6 +390,11 @@ static int cp_build_command(struct osdp_pd *pd, uint8_t *buf, int max_len)
 			buf[len++] = pd->sc.cp_cryptogram[i];
 		ret = 0;
 		break;
+#ifdef CONFIG_OSDP_TRS
+	case CMD_XWR:
+		// To Do
+		break;
+#endif
 	default:
 		LOG_ERR("Unknown/Unsupported CMD(%02x)", pd->cmd_id);
 		return OSDP_CP_ERR_GENERIC;
@@ -630,6 +635,11 @@ static int cp_decode_response(struct osdp_pd *pd, uint8_t *buf, int len)
 	case REPLY_FTSTAT:
 		ret = osdp_file_cmd_stat_decode(pd, buf + pos, len);
 		break;
+#ifdef CONFIG_OSDP_TRS
+	case REPLY_XRD:
+		// To Do
+		break;
+#endif
 	case REPLY_CCRYPT:
 		ASSERT_LENGTH(len, REPLY_CCRYPT_DATA_LEN);
 		for (i = 0; i < 8; i++) {
@@ -1031,6 +1041,13 @@ static int state_update(struct osdp_pd *pd)
 			cp_set_online(pd);
 		}
 		break;
+#ifdef CONFIG_OSDP_TRS
+	case OSDP_CP_STATE_TRS_SETUP:
+		/**
+		 * To be done, requires user configuration option when initializing OSDP stack
+		 */
+		break;
+#endif
 	case OSDP_CP_STATE_SC_INIT:
 		osdp_sc_setup(pd);
 		cp_set_state(pd, OSDP_CP_STATE_SC_CHLNG);
