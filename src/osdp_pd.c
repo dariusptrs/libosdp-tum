@@ -530,6 +530,14 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 			break;
 		}
 		break;
+	case CMD_XWR:
+		ret = osdp_trs_cmd_decode(pd, buf + pos, len);
+		if (ret == 0) {
+			ret = OSDP_PD_ERR_NONE;
+			pd->reply_id = REPLY_FTSTAT;
+			break;
+		}
+		break;
 	case CMD_KEYSET:
 		PD_CMD_CAP_CHECK(pd, &cmd);
 		ASSERT_LENGTH(len, CMD_KEYSET_DATA_LEN);
@@ -790,6 +798,15 @@ static int pd_build_reply(struct osdp_pd *pd, uint8_t *buf, int max_len)
 	case REPLY_FTSTAT:
 		buf[len++] = pd->reply_id;
 		ret = osdp_file_cmd_stat_build(pd, buf + len, max_len);
+		if (ret <= 0) {
+			break;
+		}
+		len += ret;
+		ret = OSDP_PD_ERR_NONE;
+		break;
+	case REPLY_XRD:
+		buf[len++] = pd->reply_id;
+		ret = osdp_trs_reply_build(pd, buf + len, max_len);
 		if (ret <= 0) {
 			break;
 		}

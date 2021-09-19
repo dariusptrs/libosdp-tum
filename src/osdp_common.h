@@ -203,15 +203,8 @@ enum osdp_state_e {
 	OSDP_CP_STATE_SET_SCBK,
 	OSDP_CP_STATE_ONLINE,
 	OSDP_CP_STATE_OFFLINE,
-#ifdef CONFIG_OSDP_TRS
 	OSDP_CP_STATE_TRS_SETUP,
-	OSDP_CP_STATE_TRS_M01_XMIT,
-	OSDP_CP_STATE_TRS_M01_SCDONE,
-	OSDP_CP_STATE_TRS_M01_SPE,
-	OSDP_CP_STATE_TRS_M01_SCSCAN,
-	OSDP_CP_STATE_TRS_M00_SET,
-	OSDP_CP_STATE_TRS_M00_REQ
-#endif
+	OSDP_CP_STATE_TRS_RUN,
 };
 
 enum osdp_pkt_errors_e {
@@ -316,17 +309,11 @@ struct osdp_pd {
 	struct osdp_channel channel;     /* PD's serial channel */
 	struct osdp_secure_channel sc;   /* Secure Channel session context */
 	struct osdp_file *file;          /* File transfer context */
+	struct osdp_trs *trs;            /* TRS mode context */
 
 	/* PD command callback to app with opaque arg pointer as passed by app */
 	void *command_callback_arg;
 	pd_commnand_callback_t command_callback;
-#ifdef CONFIG_OSDP_TRS
-	/**
-	 * Add TRANSPARENT Mode Specific data holders
-	 */
-	struct pd_trs_xwr xwr;
-	struct pd_trs_xrd xrd;
-#endif
 };
 
 struct osdp {

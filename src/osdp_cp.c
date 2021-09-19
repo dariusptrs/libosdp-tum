@@ -338,6 +338,14 @@ static int cp_build_command(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		}
 		len += ret;
 		break;
+	case CMD_XWR:
+		buf[len++] = pd->cmd_id;
+		ret = osdp_trs_cmd_build(pd, buf + len, max_len);
+		if (ret <= 0) {
+			break;
+		}
+		len += ret;
+		break;
 	case CMD_KEYSET:
 		if (!sc_is_active(pd)) {
 			LOG_ERR("Can not perform a KEYSET without SC!");
@@ -390,11 +398,6 @@ static int cp_build_command(struct osdp_pd *pd, uint8_t *buf, int max_len)
 			buf[len++] = pd->sc.cp_cryptogram[i];
 		ret = 0;
 		break;
-#ifdef CONFIG_OSDP_TRS
-	case CMD_XWR:
-		// To Do
-		break;
-#endif
 	default:
 		LOG_ERR("Unknown/Unsupported CMD(%02x)", pd->cmd_id);
 		return OSDP_CP_ERR_GENERIC;
@@ -635,11 +638,9 @@ static int cp_decode_response(struct osdp_pd *pd, uint8_t *buf, int len)
 	case REPLY_FTSTAT:
 		ret = osdp_file_cmd_stat_decode(pd, buf + pos, len);
 		break;
-#ifdef CONFIG_OSDP_TRS
 	case REPLY_XRD:
-		// To Do
+		ret = osdp_trs_reply_decode(pd, buf + pos, len);
 		break;
-#endif
 	case REPLY_CCRYPT:
 		ASSERT_LENGTH(len, REPLY_CCRYPT_DATA_LEN);
 		for (i = 0; i < 8; i++) {
@@ -1028,6 +1029,10 @@ static int state_update(struct osdp_pd *pd)
 			cp_set_offline(pd);
 			break;
 		}
+		if (trs_enabled(pd) && trs_capable(pd)) {
+			cp_set_state(pd, OSDP_CP_STATE_TRS_SETUP);
+			break;
+		}
 		if (sc_is_capable(pd)) {
 			CLEAR_FLAG(pd, PD_FLAG_SC_USE_SCBKD);
 			cp_set_state(pd, OSDP_CP_STATE_SC_INIT);
@@ -1041,13 +1046,10 @@ static int state_update(struct osdp_pd *pd)
 			cp_set_online(pd);
 		}
 		break;
-#ifdef CONFIG_OSDP_TRS
 	case OSDP_CP_STATE_TRS_SETUP:
-		/**
-		 * To be done, requires user configuration option when initializing OSDP stack
-		 */
 		break;
-#endif
+	case OSDP_CP_STATE_TRS_RUN:
+		break;
 	case OSDP_CP_STATE_SC_INIT:
 		osdp_sc_setup(pd);
 		cp_set_state(pd, OSDP_CP_STATE_SC_CHLNG);
