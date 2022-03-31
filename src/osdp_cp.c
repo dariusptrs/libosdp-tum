@@ -516,6 +516,12 @@ static int cp_decode_response(struct osdp_pd *pd, uint8_t *buf, int len)
 		} else {
 			CLEAR_FLAG(pd, PD_FLAG_SC_CAPABLE);
 		}
+		t2 = OSDP_PD_CAP_SMART_CARD_SUPPORT;
+		if (pd->cap[t2].compliance_level & 0x01) {
+			SET_FLAG(pd, PD_FLAG_TRS_CAPABLE);
+		} else {
+			CLEAR_FLAG(pd, PD_FLAG_TRS_CAPABLE);
+		}
 		ret = OSDP_CP_ERR_NONE;
 		break;
 	case REPLY_LSTATR:
@@ -1029,7 +1035,7 @@ static int state_update(struct osdp_pd *pd)
 			cp_set_offline(pd);
 			break;
 		}
-		if (trs_enabled(pd) && trs_capable(pd)) {
+		if (trs_capable(pd)) {
 			cp_set_state(pd, OSDP_CP_STATE_TRS_SETUP);
 			break;
 		}

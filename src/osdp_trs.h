@@ -1,20 +1,13 @@
 /*
- * Copyright (c) 2021 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+ * Copyright (c) 2022 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define TO_TRS(pd) (pd)->trs
+#ifndef _OSDP_TRS_H_
+#define _OSDP_TRS_H_
 
-enum osdp_trs_state_e {
-	OSDP_TRS_STATE_INIT,
-};
-
-struct osdp_trs {
-	enum osdp_trs_state_e state;
-	int cmd;
-	int reply;
-};
+#include "osdp_common.h"
 
 #ifdef CONFIG_OSDP_TRS
 
@@ -55,3 +48,5 @@ static inline int osdp_trs_cmd_decode(struct osdp_pd *pd, uint8_t *buf, int len)
 }
 
 #endif /* CONFIG_OSDP_TRS */
+
+#endif /* _OSDP_TRS_H_ */

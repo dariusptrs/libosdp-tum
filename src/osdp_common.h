@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include <utils/utils.h>
 #include <utils/queue.h>
@@ -184,6 +185,8 @@ union osdp_ephemeral_data {
 #define PD_FLAG_PKT_HAS_MARK   BIT(11) /* Packet has mark byte */
 #define PD_FLAG_HAS_SCBK       BIT(12) /* PD has a dedicated SCBK */
 #define PD_FLAG_SC_DISABLED    BIT(13) /* master_key=NULL && scbk=NULL */
+#define PD_FLAG_TRS_CAPABLE    BIT(14) /* TRS - capability */
+#define PD_FLAG_TRS_ACTIVE     BIT(15) /* TRS - status */
 
 enum osdp_cp_phy_state_e {
 	OSDP_CP_PHY_STATE_IDLE,
@@ -409,6 +412,16 @@ static inline void sc_deactivate(struct osdp_pd *pd)
 		osdp_sc_teardown(pd);
 	}
 	CLEAR_FLAG(pd, PD_FLAG_SC_ACTIVE);
+}
+
+static inline bool trs_capable(struct osdp_pd *pd)
+{
+	return ISSET_FLAG(pd, PD_FLAG_TRS_CAPABLE);
+}
+
+static inline bool trs_active(struct osdp_pd *pd)
+{
+	return ISSET_FLAG(pd, PD_FLAG_TRS_ACTIVE);
 }
 
 /* from osdp_common.c */

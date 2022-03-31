@@ -1,13 +1,8 @@
 /*
- * Copyright (c) 2021 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+ * Copyright (c) 2022 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
-#ifndef _OSDP_TRS_H_
-#define _OSDP_TRS_H_
-
-#include "osdp_common.h"
 
 /**
  * @file OSDP Transparent Reader Support
@@ -16,48 +11,67 @@
  * between the CP and PD.
  */
 
-/* TRS Flags */
-#define OSDP_TRS_MODE00			0x00 /* Default – no specific Behavior Mode is in effect */
-#define OSDP_TRS_MODE01			0x01 /* Transparent smart card interface support */
+#include "osdp_trs.h"
 
-/* Disables/Enables the Mode 0 Extended Read Card Info Report Response */
-#define OSDP_TRS_CIR_DISABLED		0x00
-#define OSDP_TRS_CIR_ENABLED		0x01
+LOGGER_DECLARE(osdp, "TRS");
 
-/* Mode specific reply codes for XRW_MODE = 1 */
-#define OSDP_TRS_XRD_REPLY_ERROR			0x00 /* General error indication: PD was unable to process the command */
-#define OSDP_TRS_XRD_REPLY_CONNECTION_STATUS		0x01 /* Notifies the CP of the current Smart Card Connection status. */
-#define OSDP_TRS_XRD_REPLY_APDU_RESPONSE		0x02 /* Returning an APDU embedded in this from the specified reader */
-#define OSDP_TRS_XRD_REPLY_PIN_SEQUENCE_COMPLETED	0x03 /* Reports that the reader has completed a “Secure PIN Entry” sequence */
+#define TO_TRS(pd) (pd)->trs
 
-/* Smart Card Present Stats */
-#define OSDP_TRS_SCPS_NOT_PRESENT			0x00 /* Card Not Present */
-#define OSDP_TRS_SCPS_PRESENT_INTERFACE_NOT_SPECIFIED	0x01 /* Card Present – Interface not specified */
-#define OSDP_TRS_SCPS_PRESENT_CONTACTLESS_INTERFACE	0x02 /* Card Present on Contactless Interface */
-#define OSDP_TRS_SCPS_PRESENT_CONTACT_INTERFACE		0x03 /* Card Present on Contact Interface */
-
-enum osdp_trs_cmd_e {
-	OSDP_TRS_CMD_M0_REQ,
-	OSDP_TRS_CMD_M0_SET,
-	OSDP_TRS_CMD_M1_XMIT,
-	OSDP_TRS_CMD_M1_SCDONE,
-	OSDP_TRS_CMD_M1_SPE,
-	OSDP_TRS_CMD_M1_SCSCAN
+enum osdp_trs_state_e {
+	OSDP_TRS_STATE_INIT,
 };
 
-enum osdp_trs_xrd_reply_e {
-	OSDP_TRS_REPLY_M0_ERROR,
-	OSDP_TRS_REPLY_M0_REQR,
-	OSDP_TRS_REPLY_M0_CIRR,
-	OSDP_TRS_REPLY_M1_ERROR,
-	OSDP_TRS_REPLY_M1_MES,
-	OSDP_TRS_REPLY_M1_SCREP,
-	OSDP_TRS_REPLY_M1_SPER
+struct osdp_trs {
+	enum osdp_trs_state_e state;
+	uint8_t mode;
 };
+
+#define MODE_CODE(mode, pcmnd) (uint16_t)(((mode) & 0xff) << 8u | ((pcmnd) & 0xff))
+
+#define CMD_MODE_GET       MODE_CODE(0, 1)
+#define CMD_MODE_SET       MODE_CODE(0, 2)
+#define CMD_SEND_APDU      MODE_CODE(1, 1)
+#define CMD_TERMINATE      MODE_CODE(1, 2)
+#define CMD_ENTER_PIN      MODE_CODE(1, 3)
+#define CMD_CARD_SCAN      MODE_CODE(1, 4)
+
+/* if REPLY code is 0, it indicates and error */
+#define REPLY_CURRENT_MODE        MODE_CODE(0, 1)
+#define REPLY_CARD_INFO_REPORT    MODE_CODE(0, 2)
+#define REPLY_CARD_IF_UNKNOWN     MODE_CODE(1, 1)
+#define REPLY_CARD_IF_CONTACTLESS MODE_CODE(1, 2)
+#define REPLY_CARD_IF_CONTACT     MODE_CODE(1, 3)
 
 struct osdp_trs_cmd {
-	uint8_t mode;
-	uint8_t pcmnd;
+	uint16_t mode_code;
+	union {
+		struct cmd_mode_set {
+			uint8_t mode;
+			uint8_t config;
+		} mode_set;
+		struct send_apdu {
+			int apdu_length;
+			uint8_t apdu[64];
+		} send_apdu;
+		struct pin_entry {
+			uint8_t timeout;
+			uint8_t timeout2;
+			uint8_t format_string;
+			uint8_t pin_block_string;
+			uint8_t ping_length_format;
+			uint8_t pin_max_extra_digit_msb;
+			uint8_t pin_max_extra_digit_lsb;
+			uint8_t pin_entry_valid_condition;
+			uint8_t pin_num_messages;
+			uint8_t language_id_msb;
+			uint8_t language_id_lsb;
+			uint8_t msg_index;
+			uint8_t teo_prologue[3];
+			uint8_t apdu_length_msb;
+			uint8_t apdu_length_lsb;
+			uint8_t apdu[64];
+		} pin_entry;
+	};
 };
 
 struct osdp_trs_reply {
@@ -69,61 +83,89 @@ struct osdp_trs_reply {
 
 int osdp_trs_cmd_build(struct osdp_pd *pd, uint8_t *buf, int max_len)
 {
-	int len = 0;
+	int len = 0, apdu_length, needed_space;
 	struct osdp_trs *trs = TO_TRS(pd);
 	struct osdp_trs_cmd *cmd = (struct osdp_trs_cmd *)pd->ephemeral_data;
 
-	buf[len++] = cmd->mode;
-	buf[len++] = cmd->pcmnd;
+	uint8_t mode = BYTE_1(cmd->mode_code);
+	uint8_t code = BYTE_0(cmd->mode_code);
 
-	switch(trs->cmd){
-	case OSDP_TRS_CMD_M0_REQ:
-		break;
-	case OSDP_TRS_CMD_M0_SET:
-		buf[len++] = 0; /* code */
-		buf[len++] = 0; /* config */
-		break;
-	case OSDP_TRS_CMD_M1_SCSCAN:
-	case OSDP_TRS_CMD_M1_SCDONE:
-		buf[len++] = 0; /* id */
-		break;
-	case OSDP_TRS_CMD_M1_XMIT:
-		buf[len++] = 0; /* id */
-		// TODO: memcpy APDU
-		break;
-	case OSDP_TRS_CMD_M1_SPE:
-		buf[len++] = 0; /* id */
-		buf[len++] = 0; /* timeout */
-		buf[len++] = 0; /* timeout2 */
-		buf[len++] = 0; /* format_string */
-		buf[len++] = 0; /* pin_block_string */
-		buf[len++] = 0; /* ping_length_format */
-		buf[len++] = 0; /* pin_max_extra_digit_msb */
-		buf[len++] = 0; /* pin_max_extra_digit_lsb */
-		buf[len++] = 0; /* pin_entry_valid_condition */
-		buf[len++] = 0; /* pin_num_messages */
-		buf[len++] = 0; /* language_id_msb */
-		buf[len++] = 0; /* language_id_lsb */
-		buf[len++] = 0; /* msg_index */
-		buf[len++] = 0; /* teo_prologue[0] */
-		buf[len++] = 0; /* teo_prologue[1] */
-		buf[len++] = 0; /* teo_prologue[2] */
-		buf[len++] = 0; /* data_length_msb */
-		buf[len++] = 0; /* data_length_lsb */
-		buf[len++] = 0; /* ab_data[0] */
-		// TODO: memcpy ab_data
-		break;
-	default:
-		log_error("Unknown sub command");
+	/* mode <=> code validation */
+	if (code == 0 || (mode != 0 && mode != 1) ||
+	    (mode == 0 && code > 2) || (mode == 1 && code > 4)) {
+		return -1;
 	}
 
+	buf[len++] = mode;
+	buf[len++] = code;
+
+	if (cmd->mode_code == CMD_MODE_GET) {
+		goto out;
+	}
+
+	if (cmd->mode_code == CMD_MODE_SET) {
+		buf[len++] = cmd->mode_set.mode;
+		buf[len++] = cmd->mode_set.config;
+		goto out;
+	}
+
+	buf[len++] = 0;  /* reader -- always 0 */
+
+	switch(cmd->mode_code) {
+	case CMD_SEND_APDU:
+		buf[len++] = cmd->send_apdu.apdu_length;
+		apdu_length = cmd->send_apdu.apdu_length;
+		if (apdu_length > sizeof(cmd->send_apdu.apdu) ||
+		    apdu_length > (max_len - len)) {
+			LOG_ERR("APDU length 2BIG or Invalid! need/have: %d/%d",
+				(max_len - len), apdu_length);
+			return -1;
+		}
+		memcpy(buf, cmd->send_apdu.apdu, apdu_length);
+		len += apdu_length;
+		break;
+	case CMD_ENTER_PIN:
+		buf[len++] = cmd->pin_entry.timeout;
+		buf[len++] = cmd->pin_entry.timeout2;
+		buf[len++] = cmd->pin_entry.format_string;
+		buf[len++] = cmd->pin_entry.pin_block_string;
+		buf[len++] = cmd->pin_entry.ping_length_format;
+		buf[len++] = cmd->pin_entry.pin_max_extra_digit_msb;
+		buf[len++] = cmd->pin_entry.pin_max_extra_digit_lsb;
+		buf[len++] = cmd->pin_entry.pin_entry_valid_condition;
+		buf[len++] = cmd->pin_entry.pin_num_messages;
+		buf[len++] = cmd->pin_entry.language_id_msb;
+		buf[len++] = cmd->pin_entry.language_id_lsb;
+		buf[len++] = cmd->pin_entry.msg_index;
+		buf[len++] = cmd->pin_entry.teo_prologue[0];
+		buf[len++] = cmd->pin_entry.teo_prologue[1];
+		buf[len++] = cmd->pin_entry.teo_prologue[2];
+		buf[len++] = cmd->pin_entry.apdu_length_msb;
+		buf[len++] = cmd->pin_entry.apdu_length_lsb;
+
+		apdu_length = cmd->pin_entry.apdu_length_msb << 8;
+		apdu_length |= cmd->pin_entry.apdu_length_lsb;
+		needed_space = max_len - len - sizeof(cmd->pin_entry.apdu);
+		if (apdu_length > sizeof(cmd->pin_entry.apdu) ||
+		    apdu_length > needed_space) {
+			LOG_ERR("APDU length 2BIG or Invalid! need/have: %d/%d",
+				needed_space, apdu_length);
+			return -1;
+		}
+		memcpy(buf, cmd->pin_entry.apdu, apdu_length);
+		len += apdu_length;
+		break;
+	}
+out:
 	return len;
 }
 
 int osdp_trs_reply_decode(struct osdp_pd *pd, uint8_t *buf, int len)
 {
 	struct osdp_trs *trs = TO_TRS(pd);
-	struct osdp_trs_reply *reply = (struct osdp_trs_reply *)pd->ephemeral_data;
+	struct osdp_trs_reply *reply;
+
+	reply = (struct osdp_trs_reply *)pd->ephemeral_data;
 
 	return 0;
 }
@@ -132,91 +174,126 @@ int osdp_trs_reply_decode(struct osdp_pd *pd, uint8_t *buf, int len)
 
 int osdp_trs_reply_build(struct osdp_pd *pd, uint8_t *buf, int max_len)
 {
+	int len = 0;
 	struct osdp_trs *trs = TO_TRS(pd);
-	struct osdp_trs_reply *reply = (struct osdp_trs_reply *)pd->ephemeral_data;
+	struct osdp_trs_reply *reply;
 
-	buf[len++] = cmd->mode;
-	buf[len++] = cmd->preply;
+	reply = (struct osdp_trs_reply *)pd->ephemeral_data;
 
-	switch (trs->reply) {
-	case OSDP_TRS_REPLY_M1_MES:
-		break;
-	case OSDP_TRS_REPLY_M0_ERROR:
-	case OSDP_TRS_REPLY_M1_ERROR:
-		buf[len++] = 0; /* error */
-		break;
-	case OSDP_TRS_REPLY_M0_REQR:
-		buf[len++] = 0; /* code */
-		buf[len++] = 0; /* config */
-		break;
-	case OSDP_TRS_REPLY_M0_CIRR:
-		buf[len++] = 0; /* id */
-		buf[len++] = 0; /* protocol */
-		buf[len++] = 0; /* csn_len */
-		buf[len++] = 0; /* protocol_len */
-		buf[len++] = 0; /* csn_data */
-		// TODO: memcpy data
-		break;
-	case OSDP_TRS_REPLY_M1_SCREP:
-		buf[len++] = 0; /* id */
-		buf[len++] = 0; /* status */
-		// TODO: memcpy APDU
-		break;
-	case OSDP_TRS_REPLY_M1_SPER:
-		buf[len++] = 0; /* id */
-		buf[len++] = 0; /* status */
-		buf[len++] = 0; /* tries */
-		break;
-	default:
-		log_error("Unknown sub command");
-	}
+	buf[len++] = reply->mode;
+	buf[len++] = reply->preply;
+	return len;
 }
 
 int osdp_trs_cmd_decode(struct osdp_pd *pd, uint8_t *buf, int len)
 {
 	struct osdp_trs *trs = TO_TRS(pd);
 	struct osdp_trs_cmd *cmd = (struct osdp_trs_cmd *)pd->ephemeral_data;
+	int pos = 0, remaining_space;
+	int mode, next_mode, code, next_config, mode_code, apdu_length;
 
-	return 0;
+	memset(pd->ephemeral_data, 0, sizeof(pd->ephemeral_data));
+	mode = buf[pos++];
+	code = buf[pos++];
+	mode_code = MODE_CODE(mode, code);
+
+	/* mode <=> code validation */
+	if (code == 0 || (mode != 0 && mode != 1) ||
+	    (mode == 0 && code > 2) || (mode == 1 && code > 4)) {
+		return -1;
+	}
+
+	/* only mode 0 commands are allowed in all modes */
+	if (!mode && mode != trs->mode) {
+		return -1;
+	}
+
+	if (code == CMD_MODE_GET) {
+		return 0;
+	}
+
+	if (code == CMD_MODE_SET) {
+		cmd->mode_set.mode = buf[pos++];
+		cmd->mode_set.config = buf[pos++];
+		return 0;
+	}
+
+	pos++;  /* reader -- always 0 */
+
+	switch(mode_code) {
+	case CMD_SEND_APDU:
+		apdu_length = buf[pos++];
+		remaining_space = len - pos;
+		if (apdu_length > sizeof(cmd->send_apdu.apdu) ||
+		    apdu_length > remaining_space) {
+			LOG_ERR("APDU length 2BIG or Invalid! need/have: %d/%d",
+				remaining_space, apdu_length);
+			return -1;
+		}
+		cmd->send_apdu.apdu_length = apdu_length;
+		memcpy(cmd->send_apdu.apdu, buf, apdu_length);
+		pos += apdu_length;
+		break;
+	case CMD_ENTER_PIN:
+		cmd->pin_entry.timeout = buf[pos++];
+		cmd->pin_entry.timeout2 = buf[pos++];
+		cmd->pin_entry.format_string = buf[pos++];
+		cmd->pin_entry.pin_block_string = buf[pos++];
+		cmd->pin_entry.ping_length_format = buf[pos++];
+		cmd->pin_entry.pin_max_extra_digit_msb = buf[pos++];
+		cmd->pin_entry.pin_max_extra_digit_lsb = buf[pos++];
+		cmd->pin_entry.pin_entry_valid_condition = buf[pos++];
+		cmd->pin_entry.pin_num_messages = buf[pos++];
+		cmd->pin_entry.language_id_msb = buf[pos++];
+		cmd->pin_entry.language_id_lsb = buf[pos++];
+		cmd->pin_entry.msg_index = buf[pos++];
+		cmd->pin_entry.teo_prologue[0] = buf[pos++];
+		cmd->pin_entry.teo_prologue[1] = buf[pos++];
+		cmd->pin_entry.teo_prologue[2] = buf[pos++];
+		cmd->pin_entry.apdu_length_msb = buf[pos++];
+		cmd->pin_entry.apdu_length_lsb = buf[pos++];
+
+		remaining_space = (len - pos - sizeof(cmd->pin_entry.apdu));
+		apdu_length = cmd->pin_entry.apdu_length_msb << 8;
+		apdu_length |= cmd->pin_entry.apdu_length_lsb;
+		if (apdu_length > sizeof(cmd->pin_entry.apdu) ||
+		    apdu_length > remaining_space) {
+			LOG_ERR("APDU length 2BIG or Invalid! need/have: %d/%d",
+				remaining_space, apdu_length);
+			return -1;
+		}
+		memcpy(cmd->pin_entry.apdu, buf, apdu_length);
+		pos += apdu_length;
+		break;
+	}
+
+	return pos;
 }
 
 /* --- State Management --- */
+
+static int trs_cmd_set_mode(struct osdp_pd *pd, int to_mode, int to_config)
+{
+	struct osdp_trs *trs = TO_TRS(pd);
+	struct osdp_cmd *cmd;
+
+	cmd = cp_cmd_alloc(pd);
+	if (cmd == NULL) {
+		return -1;
+	}
+	cmd->id = CMD_XWR;
+
+	cp_cmd_enqueue(pd, cmd);
+	return 0;
+}
 
 static int trs_state_update(struct osdp_pd *pd)
 {
 	struct osdp_trs_cmd *cmd = (struct osdp_trs_cmd *)pd->ephemeral_data;
 
 	switch(pd->state) {
-	case OSDP_CP_STATE_TRS_M0_SET:
-		osdp_trs_m00_set(pd);
-		cmd->mode = 1;
-		cp_cmd_enqueue(pd, CMD_XWR);
-		break;
-	case OSDP_CP_STATE_TRS_M0_REQ:
-		/**
-		 * Need to expose as API ?
-		 */
-		osdp_trs_m00_req(pd);
-		break;
-	case OSDP_CP_STATE_TRS_M1_XMIT:
-		osdp_trs_m01_xmit(pd);
-		cp_cmd_enqueue(pd, CMD_XWR);
-		break;
-	case OSDP_CP_STATE_TRS_M1_SCDONE:
-		osdp_trs_m01_scdone(pd);
-		break;
-	case OSDP_CP_STATE_TRS_M1_SPE:
-		osdp_trs_m01_spe(pd);
-		break;
-	case OSDP_CP_STATE_TRS_M1_SCSCAN:
-		/**
-		 * Need to expose as API ?
-		 */
-		osdp_trs_m01_scscan(pd);
-		break;
-	default:
-		break;
-	}
+
+	};
 }
 
 /* --- Exported Methods --- */

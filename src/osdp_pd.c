@@ -534,7 +534,7 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 		ret = osdp_trs_cmd_decode(pd, buf + pos, len);
 		if (ret == 0) {
 			ret = OSDP_PD_ERR_NONE;
-			pd->reply_id = REPLY_FTSTAT;
+			pd->reply_id = REPLY_XRD;
 			break;
 		}
 		break;
