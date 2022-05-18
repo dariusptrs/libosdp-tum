@@ -38,9 +38,9 @@ struct osdp_trs {
 /* if REPLY code is 0, it indicates and error */
 #define REPLY_CURRENT_MODE        MODE_CODE(0, 1)
 #define REPLY_CARD_INFO_REPORT    MODE_CODE(0, 2)
-#define REPLY_CARD_IF_UNKNOWN     MODE_CODE(1, 1)
-#define REPLY_CARD_IF_CONTACTLESS MODE_CODE(1, 2)
-#define REPLY_CARD_IF_CONTACT     MODE_CODE(1, 3)
+#define REPLY_CARD_PRSENT	      MODE_CODE(1, 1)
+#define REPLY_CARD_DATA			  MODE_CODE(1, 2)
+#define REPLY_PIN_ENTRY_COMPLETE  MODE_CODE(1, 3)
 
 struct osdp_trs_cmd {
 	uint16_t mode_code;
@@ -75,8 +75,40 @@ struct osdp_trs_cmd {
 };
 
 struct osdp_trs_reply {
-	uint8_t mode;
-	uint8_t preply;
+	// uint8_t mode;
+	// uint8_t preply;
+	uint16_t mode_code;
+	union {
+		struct cmd_reply_NAK {
+			uint8_t err_code;
+		} reply_nak;
+		struct mode_setting_report {
+			uint8_t mode;
+			uint8_t mode_config;
+		} mode_report;
+		struct card_info_report {
+			uint8_t reader;
+			uint8_t protocol;
+			uint8_t csn_len;
+			uint8_t protocol_data_len;
+			uint8_t csn[0];
+			uint8_t protocol_data[0];
+		} card_info_report;
+		struct card_present_status {
+			uint8_t reader;
+			uint8_t status;
+		} card_status;
+		struct card_data {
+			uint8_t reader;
+			uint8_t status;
+			uint8_t apdu[64];
+		} card_data;
+		struct pin_entry_complete {
+			uint8_t reader;
+			uint8_t status;
+			uint8_t tries;
+		} pin_entry_complete;
+	};
 };
 
 /* --- Sender CMD/RESP Handers --- */
@@ -164,8 +196,46 @@ int osdp_trs_reply_decode(struct osdp_pd *pd, uint8_t *buf, int len)
 {
 	struct osdp_trs *trs = TO_TRS(pd);
 	struct osdp_trs_reply *reply;
+	int csn_len, prot_data_len, pos = 0;
 
 	reply = (struct osdp_trs_reply *)pd->ephemeral_data;
+
+	switch(reply->mode_code) {
+		case REPLY_CURRENT_MODE:
+			reply->mode_report.mode = buf[pos++];
+			reply->mode_report.mode_config = buf[pos++];
+			break;
+		case REPLY_CARD_INFO_REPORT:
+			reply->card_info_report.reader = buf[pos++];
+			reply->card_info_report.protocol = buf[pos++];
+
+			csn_len = buf[pos++];
+			prot_data_len = buf[pos++];
+			reply->card_info_report.csn_len = csn_len;
+			reply->card_info_report.protocol_data_len = prot_data_len;
+			memcpy(reply->card_info_report.csn, buf+pos, csn_len);
+			pos+=csn_len;
+			memcpy(reply->card_info_report.protocol_data, buf+pos, prot_data_len);
+			pos+=prot_data_len;
+			break;
+		case REPLY_CARD_PRSENT:
+			reply->card_status.reader = buf[pos++];
+			reply->card_status.status = buf[pos++];
+			break;
+		case REPLY_CARD_DATA:
+			reply->card_data.reader = buf[pos++];
+			reply->card_data.status = buf[pos++];
+			memcpy(reply->card_data.apdu, buf+pos, len-2);
+			break;
+		case REPLY_PIN_ENTRY_COMPLETE:
+			reply->pin_entry_complete.reader = buf[pos++];
+			reply->pin_entry_complete.status = buf[pos++];
+			reply->pin_entry_complete.tries = buf[pos++];
+			break;
+		default:
+			break;
+
+	}
 
 	return 0;
 }
@@ -174,7 +244,7 @@ int osdp_trs_reply_decode(struct osdp_pd *pd, uint8_t *buf, int len)
 
 int osdp_trs_reply_build(struct osdp_pd *pd, uint8_t *buf, int max_len)
 {
-	int len = 0;
+	int len = 0, csn_len, prot_data_len;
 	struct osdp_trs *trs = TO_TRS(pd);
 	struct osdp_trs_reply *reply;
 
@@ -182,6 +252,43 @@ int osdp_trs_reply_build(struct osdp_pd *pd, uint8_t *buf, int max_len)
 
 	buf[len++] = reply->mode;
 	buf[len++] = reply->preply;
+
+	switch (reply->mode_code)
+	{
+		case REPLY_CURRENT_MODE:
+			buf[len++] = reply->mode_report.mode;
+			buf[len++] = reply->mode_report.mode_config;
+			break;
+		case REPLY_CARD_INFO_REPORT:
+			buf[len++] = reply->card_info_report.reader;
+			buf[len++] = reply->card_info_report.protocol;
+
+			csn_len = reply->card_info_report.csn_len;
+			prot_data_len = reply->card_info_report.protocol_data_len;
+			buf[len++] = reply->card_info_report.csn_len;
+			buf[len++] = reply->card_info_report.protocol_data_len;
+			memcpy(buf+len, reply->card_info_report.csn, csn_len);
+			len+=csn_len;
+			memcpy(buf+len, reply->card_info_report.protocol_data, prot_data_len);
+			len+=prot_data_len;
+			break;
+		case REPLY_CARD_PRSENT:
+			buf[len++] = reply->card_status.reader;
+			buf[len++] = reply->card_status.status;
+			break;
+		case REPLY_CARD_DATA:
+			buf[len++] = reply->card_data.reader;
+			buf[len++] = reply->card_data.status;
+			memcpy(buf+len, reply->card_data.apdu, max_len-2);
+			break;
+		case REPLY_PIN_ENTRY_COMPLETE:
+			buf[len++] = reply->pin_entry_complete.reader;
+			buf[len++] = reply->pin_entry_complete.status;
+			buf[len++] = reply->pin_entry_complete.tries;
+			break;
+		default:
+			break;
+	}
 	return len;
 }
 
