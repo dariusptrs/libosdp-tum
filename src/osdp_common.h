@@ -54,7 +54,7 @@
 
 #define OSDP_QUEUE_SLAB_SIZE                                                   \
 	(OSDP_CP_CMD_POOL_SIZE *                                               \
-	 (sizeof(struct osdp_cmd) + sizeof(queue_node_t)))
+	 (sizeof(union osdp_ephemeral_data) + sizeof(queue_node_t)))
 
 #define safe_free(p)                                                           \
 	if (p)                                                                 \
@@ -188,6 +188,13 @@ union osdp_ephemeral_data {
 #define PD_FLAG_TRS_CAPABLE    BIT(14) /* TRS - capability */
 #define PD_FLAG_TRS_ACTIVE     BIT(15) /* TRS - status */
 
+#define TRS_MODE_00 0x00
+#define TRS_MODE_01 0x01
+
+#define TRS_ENABLE_CARD_INFO_REPORT  0x01
+#define TRS_DISABLE_CARD_INFO_REPORT 0x00
+
+
 enum osdp_cp_phy_state_e {
 	OSDP_CP_PHY_STATE_IDLE,
 	OSDP_CP_PHY_STATE_SEND_CMD,
@@ -208,6 +215,13 @@ enum osdp_state_e {
 	OSDP_CP_STATE_OFFLINE,
 	OSDP_CP_STATE_TRS_SETUP,
 	OSDP_CP_STATE_TRS_RUN,
+};
+
+enum trs_state_e {
+	TRS_STATE_SET_MODE,
+	TRS_STATE_XMIT,
+	TRS_STATE_DISCONNECT_CARD,
+	TRS_STATE_TEARDOWN,
 };
 
 enum osdp_pkt_errors_e {

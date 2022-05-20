@@ -1035,6 +1035,14 @@ static int state_update(struct osdp_pd *pd)
 			cp_set_offline(pd);
 			break;
 		}
+		/**
+		 * How do we determine here if it is intended to use trs? A init config flagh to validate that?
+		 *
+		 * if (trs_capabale(pd) && trs_enabled(pd)) {
+		 * 		cp_set_state(pd, OSDP_CP_STATE_TRS_SETUP);
+		 * 		break;
+		 * }
+		 */
 		if (trs_capable(pd)) {
 			cp_set_state(pd, OSDP_CP_STATE_TRS_SETUP);
 			break;
@@ -1053,6 +1061,12 @@ static int state_update(struct osdp_pd *pd)
 		}
 		break;
 	case OSDP_CP_STATE_TRS_SETUP:
+		trs_cmd_set_mode(pd, TRS_MODE_00, TRS_ENABLE_CARD_INFO_REPORT);
+		if (sc_is_capable(pd)) {
+			CLEAR_FLAG(pd, PD_FLAG_SC_USE_SCBKD);
+			cp_set_state(pd, OSDP_CP_STATE_SC_INIT);
+			break;
+		}
 		break;
 	case OSDP_CP_STATE_TRS_RUN:
 		break;
