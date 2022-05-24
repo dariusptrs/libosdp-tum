@@ -561,6 +561,7 @@ struct osdp_trs_reply {
 	// uint8_t mode;
 	// uint8_t preply;
 	uint16_t mode_code;
+	uint32_t data_len;
 	union {
 		struct cmd_reply_NAK {
 			uint8_t err_code;
